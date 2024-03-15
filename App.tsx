@@ -1,138 +1,162 @@
-import React, { FC, useCallback, useState } from "react";
+import React, { useState } from "react";
 import {
   FlatList,
-  ListRenderItemInfo,
-  SafeAreaView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  // View,
+  View,
 } from "react-native";
-import useBLE from "./useBLE";
-import { Device } from "react-native-ble-plx";
+import { BleManager } from "react-native-ble-plx";
 
-type DeviceModalListItemProps = {
-  item: ListRenderItemInfo<Device>;
-};
+const _BleManager = new BleManager();
 
-const DeviceModalListItem: FC<DeviceModalListItemProps> = (props) => {
-  const { item } = props;
+export default function App() {
+  const [displayText, setDisplayText] = useState<any>("");
+  const [devices, setDevices] = useState<any[]>([]);
+  const [connectedDevice, setConnectedDevice] = useState<any>(null);
+  const [characteristics, setCharacteristics] = useState<any[]>([]);
 
-  return (
-    <TouchableOpacity style={styles.ctaButton}>
-      <Text style={styles.ctaButtonText}>{item.item.name}</Text>
-    </TouchableOpacity>
-  );
-};
+  console.log(devices);
 
-const App = () => {
-  const { requestPermissions, scanForPeripherals, allDevices } =
-    useBLE();
-
-  const scanForDevices = async () => {
-    const isPermissionsEnabled = await requestPermissions();
-    if (isPermissionsEnabled) {
-      scanForPeripherals();
+  const disconnectDevice = () => {
+    if (connectedDevice) {
+      connectedDevice.cancelConnection();
+      setConnectedDevice(null);
+      setDisplayText("");
     }
   };
 
-  const renderDeviceModalListItem = useCallback(
-    (item: ListRenderItemInfo<Device>) => {
-      return <DeviceModalListItem item={item} />;
-    },
-    []
-  );
+  const startScan = () => {
+    _BleManager.startDeviceScan(
+      null,
+      null,
+      async (error, device: any) => {
+        if (error) {
+          console.error("Error scanning:", error);
+          return;
+        }
+        console.log("Found device:", device.localName, device.name);
+        if (device.localName === "Test" || device.name === "Test") {
+          setDevices((prevDevices) => [...prevDevices, device]);
+        }
+      }
+    );
+  };
+
+  const connectDevice = async (device: any) => {
+    try {
+      _BleManager.stopDeviceScan();
+      const connectedDevice = await _BleManager.connectToDevice(
+        device.id
+      );
+      await connectedDevice.discoverAllServicesAndCharacteristics();
+      setConnectedDevice(connectedDevice);
+      setDisplayText(
+        `Device connected\n with ${connectedDevice.name}`
+      );
+      setDevices([]);
+      const services = await connectedDevice.services();
+      for (const service of services) {
+        const characteristics = await service.characteristics();
+        setCharacteristics((prevCharacteristics) => [
+          ...prevCharacteristics,
+          ...characteristics,
+        ]);
+      }
+    } catch (error) {
+      console.error("Error connecting to device:", error);
+    }
+  };
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* <View style={styles.heartRateTitleWrapper}>
-        {connectedDevice ? (
-          <>
-            <PulseIndicator />
-            <Text style={styles.heartRateTitleText}>
-              Your Heart Rate Is:
+    <View style={styles.mainContainer}>
+      {devices.length === 0 && !connectedDevice ? (
+        <View style={styles.centeredContainer}>
+          <TouchableOpacity
+            activeOpacity={0.6}
+            onPress={startScan}
+            style={styles.circleView}
+          >
+            <Text style={styles.boldTextStyle}>
+              {displayText || "Start Scanning"}
             </Text>
-            <Text style={styles.heartRateText}>{heartRate} bpm</Text>
-          </>
-        ) : (
-          <Text style={styles.heartRateTitleText}>
-            Please Connect to a Heart Rate Monitor
-          </Text>
-        )}
-      </View> */}
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <FlatList
+          style={{ flex: 1 }}
+          data={devices}
+          keyExtractor={(item: any) => item.id}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              activeOpacity={0.6}
+              onPress={() => connectDevice(item)}
+              style={styles.deviceListItem}
+            >
+              <Text style={styles.deviceListItemText}>
+                {item.name}
+              </Text>
+            </TouchableOpacity>
+          )}
+        />
+      )}
 
-      <Text style={styles.modalTitleText}>Lists of devices</Text>
-      <FlatList
-        contentContainerStyle={styles.modalFlatlistContiner}
-        data={allDevices}
-        renderItem={renderDeviceModalListItem}
-      />
-    </SafeAreaView>
+      {connectedDevice && (
+        <View style={styles.centeredContainer}>
+          <Text style={styles.centeredText}>
+            Tap button to disconnect device.
+          </Text>
+          <TouchableOpacity
+            activeOpacity={0.6}
+            onPress={disconnectDevice}
+            style={styles.circleView}
+          >
+            <Text style={styles.boldTextStyle}>Disconnect</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  container: {
+  mainContainer: {
     flex: 1,
-    backgroundColor: "#f2f2f2",
+    padding: 10,
   },
-  heartRateTitleWrapper: {
+  centeredContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
   },
-  heartRateTitleText: {
-    fontSize: 30,
+  circleView: {
+    width: 250,
+    height: 250,
+    borderRadius: 125,
+    borderWidth: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  boldTextStyle: {
+    fontSize: 20,
+    color: "#000",
     fontWeight: "bold",
     textAlign: "center",
-    marginHorizontal: 20,
-    color: "black",
   },
-  heartRateText: {
-    fontSize: 25,
-    marginTop: 15,
-  },
-  ctaButton: {
-    backgroundColor: "#FF6060",
-    justifyContent: "center",
-    alignItems: "center",
-    height: 50,
-    marginHorizontal: 20,
-    marginBottom: 5,
-    borderRadius: 8,
-  },
-  ctaButtonText: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "white",
-  },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: "#f2f2f2",
-  },
-  modalFlatlistContiner: {
-    flex: 1,
-    justifyContent: "center",
-  },
-  modalCellOutline: {
+  deviceListItem: {
+    width: "100%",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderWidth: 1,
-    borderColor: "black",
-    alignItems: "center",
-    marginHorizontal: 20,
-    paddingVertical: 15,
-    borderRadius: 8,
+    borderRadius: 10,
+    marginBottom: 10,
   },
-  modalTitle: {
-    flex: 1,
-    backgroundColor: "#f2f2f2",
+  deviceListItemText: {
+    color: "black",
+    fontSize: 18,
   },
-  modalTitleText: {
-    marginTop: 40,
-    fontSize: 30,
-    fontWeight: "bold",
-    marginHorizontal: 20,
+  centeredText: {
+    marginBottom: 12,
     textAlign: "center",
   },
 });
-
-export default App;
